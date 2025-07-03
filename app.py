@@ -2,9 +2,10 @@ from flask import Flask, request, jsonify
 import json
 
 app = Flask(__name__)
+app.config['JSON_SORT_KEYS'] = False
 
-# Load the JSON file once at startup
-with open('dataset_english.json', 'r', encoding='utf-8') as f:
+# Load the merged JSON file once at startup
+with open('bhagavad_gita.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
 @app.route('/verse-details', methods=['GET'])
@@ -26,10 +27,16 @@ def get_verse_details():
             results.append({
                 'chapter': chapter,
                 'verse': verse,
-                'text': verse_detail.get('text'),
-                'meaning': verse_detail.get('meaning'),
+                'slok': verse_detail.get('text_en'),
                 'transliteration': verse_detail.get('transliteration'),
-                'word_meanings': verse_detail.get('word_meanings')
+                'english': {
+                    'meaning': verse_detail.get('meaning_en'),
+                    'word_meanings': verse_detail.get('word_meanings_en')
+                },
+                'hindi': {
+                    'meaning': verse_detail.get('meaning_hi'),
+                    'word_meanings': verse_detail.get('word_meanings_hi')
+                }
             })
         else:
             results.append({

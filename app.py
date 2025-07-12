@@ -100,12 +100,19 @@ def handle_verse_request(user_msg):
             verse_detail = chapter_data.get(v)
             if verse_detail:
                 results.append(f"""
-📖 *Chapter {chapter}, Verse {v}:*
-_{verse_detail.get('text_en')}_
-
-*Meaning (EN):* {verse_detail.get('meaning_en')}
-*Word Meanings (EN):* {verse_detail.get('word_meanings_en')}
-""")
+                        📖 *Chapter {chapter}, Verse {v}:*
+                        {verse_detail.get('text_en')}
+                        
+                        🗣️ _{verse_detail.get('transliteration')}_
+                        
+                        🇬🇧 *Meaning*: {verse_detail.get('meaning_en')}
+                        
+                        🧠 *Word Meanings (EN)*: {verse_detail.get('word_meanings_en')}
+                        
+                        🇮🇳 *Hindi Meaning*: {verse_detail.get('meaning_hi')}
+                        
+                        🧠 *Word Meanings (HI)*: {verse_detail.get('word_meanings_hi')}
+                    """)
             else:
                 results.append(f"⚠️ Verse {v} not found in chapter {chapter}.")
 

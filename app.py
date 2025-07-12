@@ -46,7 +46,7 @@ def format_verse(ch, verse, verse_detail):
 def handle_verse_request(user_msg, user_id=None):
     user_msg = user_msg.strip().lower()
 
-    if user_msg in ["start", "help"]:
+    if user_msg in ["hi", "hello", "start", "help"]:
         return (
             "🙏 Welcome to Bhagavad Gita Slok Bot!\n\n"
             "You can send:\n"

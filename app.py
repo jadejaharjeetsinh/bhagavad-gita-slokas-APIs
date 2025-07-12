@@ -3,6 +3,9 @@ import os
 import json
 import requests
 from dotenv import load_dotenv
+from datetime import datetime
+import random
+import re
 
 load_dotenv()
 app = Flask(__name__)
@@ -15,6 +18,99 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 # Load Bhagavad Gita JSON at startup
 with open('bhagavad_gita.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
+
+# Optional: Persist user state
+USER_STATE_FILE = "user_state.json"
+if os.path.exists(USER_STATE_FILE):
+    with open(USER_STATE_FILE, "r") as f:
+        user_last_verse = json.load(f)
+else:
+    user_last_verse = {}
+
+def save_user_state():
+    with open(USER_STATE_FILE, "w") as f:
+        json.dump(user_last_verse, f)
+
+def format_verse(ch, verse, verse_detail):
+    return f"""\n📖 *Chapter {ch}, Verse {verse}:*
+{verse_detail.get('text_en')}
+
+🗣️ _{verse_detail.get('transliteration')}_
+
+🇬🇧 *Meaning*: {verse_detail.get('meaning_en')}
+🧠 *Word Meanings (EN)*: {verse_detail.get('word_meanings_en')}
+
+🇮🇳 *Hindi Meaning*: {verse_detail.get('meaning_hi')}
+🧠 *Word Meanings (HI)*: {verse_detail.get('word_meanings_hi')}\n"""
+
+def handle_verse_request(user_msg, user_id=None):
+    user_msg = user_msg.strip().lower()
+
+    if user_msg in ["start", "help"]:
+        return (
+            "🙏 Welcome to Bhagavad Gita Slok Bot!\n\n"
+            "You can send:\n"
+            "👉 *2.47* → Chapter 2, Verse 47\n"
+            "👉 *2.11,12* → Chapter 2, Verses 11 & 12\n"
+            "👉 *random* → Random verse\n"
+            "👉 *daily* → Verse of the day\n"
+            "👉 *next* → Next verse after last you viewed"
+        )
+
+    if user_msg == "random":
+        ch = str(random.randint(1, 18))
+        ch_data = data.get("verses", {}).get(ch)
+        if ch_data:
+            verse = random.choice(list(ch_data.keys()))
+            return format_verse(ch, verse, ch_data.get(verse))
+        return "❌ Could not find a verse."
+
+    if user_msg == "daily":
+        day = datetime.now().day
+        ch = str((day % 18) + 1)
+        ch_data = data.get("verses", {}).get(ch)
+        if ch_data:
+            verse = str(((day * 2) % len(ch_data)) + 1)
+            return format_verse(ch, verse, ch_data.get(verse))
+        return "❌ Could not find daily verse."
+
+    if user_msg == "next" and user_id:
+        last = user_last_verse.get(user_id)
+        if last:
+            ch, v = map(int, last)
+            v += 1
+            ch_data = data.get("verses", {}).get(str(ch))
+            if ch_data and str(v) in ch_data:
+                user_last_verse[user_id] = (ch, v)
+                save_user_state()
+                return format_verse(ch, v, ch_data[str(v)])
+            else:
+                return "📘 You've reached the last verse of this chapter."
+        return "📌 Please start with a verse like *2.47* first."
+
+    matches = re.findall(r'(\d+)\.(\d+(?:,\d+)*)', user_msg)
+    if not matches:
+        return "⚠️ Please send verses like: 2.11 or 2.11,12 or 3.16,17,18"
+
+    results = []
+    for chapter, verse_group in matches:
+        ch_data = data.get("verses", {}).get(str(chapter))
+        if not ch_data:
+            results.append(f"❌ Chapter {chapter} not found.")
+            continue
+
+        for verse in verse_group.split(','):
+            verse = verse.strip()
+            verse_detail = ch_data.get(verse)
+            if verse_detail:
+                results.append(format_verse(chapter, verse, verse_detail))
+                if user_id:
+                    user_last_verse[user_id] = (int(chapter), int(verse))
+                    save_user_state()
+            else:
+                results.append(f"⚠️ Verse {verse} not found in chapter {chapter}.")
+
+    return "\n".join(results[:5])
 
 @app.route('/verse-details', methods=['GET'])
 def get_verse_details():
@@ -62,64 +158,23 @@ def webhook():
             return request.args.get("hub.challenge")
         return "Invalid verification token", 403
 
-    data_in = request.get_json()
+    data = request.get_json()
     print("== Incoming WhatsApp Webhook ==")
-    print(json.dumps(data_in, indent=2))
+    print(json.dumps(data, indent=2))
 
-    if data_in.get("entry"):
-        for entry in data_in["entry"]:
+    if data.get("entry"):
+        for entry in data["entry"]:
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 messages = value.get("messages")
                 if messages:
                     msg = messages[0]
                     from_number = msg["from"]
-                    user_msg = msg.get("text", {}).get("body", "").strip()
-
-                    reply = handle_verse_request(user_msg)
+                    user_msg = msg["text"]["body"]
+                    reply = handle_verse_request(user_msg, from_number)
                     send_message(from_number, reply)
 
     return "ok", 200
-
-def handle_verse_request(user_msg):
-    try:
-        params = dict(item.split('=') for item in user_msg.split('&') if '=' in item)
-        chapter = params.get('chapter')
-        verses = params.get('verse', '').split(',')
-
-        if not chapter or not verses:
-            return "❗ Please send message as: chapter=2&verse=11 or chapter=2&verse=11,12"
-
-        results = []
-        chapter_data = data.get('verses', {}).get(str(chapter))
-        if not chapter_data:
-            return f"❌ Chapter {chapter} not found."
-
-        for verse in verses:
-            v = verse.strip()
-            verse_detail = chapter_data.get(v)
-            if verse_detail:
-                results.append(f"""
-                        📖 *Chapter {chapter}, Verse {v}:*
-                        {verse_detail.get('text_en')}
-                        
-                        🗣️ _{verse_detail.get('transliteration')}_
-                        
-                        🇬🇧 *Meaning*: {verse_detail.get('meaning_en')}
-                        
-                        🧠 *Word Meanings (EN)*: {verse_detail.get('word_meanings_en')}
-                        
-                        🇮🇳 *Hindi Meaning*: {verse_detail.get('meaning_hi')}
-                        
-                        🧠 *Word Meanings (HI)*: {verse_detail.get('word_meanings_hi')}
-                    """)
-            else:
-                results.append(f"⚠️ Verse {v} not found in chapter {chapter}.")
-
-        return "\n".join(results[:5])  # Limit to first 5 results
-    except Exception as e:
-        print("Error in handle_verse_request:", str(e))
-        return "⚠️ Error processing your request. Please use format:\nchapter=2&verse=11,12"
 
 def send_message(to, text):
     url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
@@ -132,9 +187,9 @@ def send_message(to, text):
         "to": to,
         "text": {"body": text}
     }
-    response = requests.post(url, headers=headers, json=payload)
-    print("Sent reply status:", response.status_code)
-    print(response.text)
+    res = requests.post(url, headers=headers, json=payload)
+    print(f"Sent reply status: {res.status_code}")
+    print(res.text)
 
 if __name__ == '__main__':
     app.run(debug=True)

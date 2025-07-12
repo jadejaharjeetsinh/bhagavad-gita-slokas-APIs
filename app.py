@@ -75,7 +75,7 @@ def webhook():
                 if messages:
                     msg = messages[0]
                     from_number = msg["from"]
-                    user_msg = msg["text"]["body"]
+                    user_msg = 'chapter=2&verse=11' # msg["text"]["body"]
                     reply = handle_verse_request(user_msg)
                     send_message(from_number, reply)
 

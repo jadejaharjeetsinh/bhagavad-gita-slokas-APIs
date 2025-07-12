@@ -63,6 +63,10 @@ def webhook():
         return "Invalid verification token", 403
 
     data = request.get_json()
+    print("== Incoming WhatsApp Webhook ==")
+    print(json.dumps(data, indent=2)) 
+
+    data = request.get_json()
     if data.get("entry"):
         for entry in data["entry"]:
             for change in entry.get("changes", []):

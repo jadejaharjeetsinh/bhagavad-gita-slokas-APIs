@@ -46,6 +46,14 @@ def format_verse(ch, verse, verse_detail):
 def handle_verse_request(user_msg, user_id=None):
     user_msg = user_msg.strip().lower()
 
+    MOOD_KEYWORDS = {
+        "sad": ["grief", "sorrow", "sad", "depressed", "lament", "distress", "pain", "suffering"],
+        "peace": ["peace", "calm", "serenity", "tranquility", "stillness", "inner peace"],
+        "anger": ["anger", "wrath", "rage", "temper", "control", "resentment"],
+        "fear": ["fear", "doubt", "anxiety", "panic", "scared", "insecure"],
+        "hope": ["hope", "faith", "future", "courage", "strength", "uplift"],
+    }
+
     if user_msg in ["hi", "hello", "start", "help"]:
         return (
             "🙏 Welcome to Bhagavad Gita Slok Bot!\n\n"
@@ -54,7 +62,8 @@ def handle_verse_request(user_msg, user_id=None):
             "👉 *2.11,12* → Chapter 2, Verses 11 & 12\n"
             "👉 *random* → Random verse\n"
             "👉 *daily* → Verse of the day\n"
-            "👉 *next* → Next verse after last you viewed"
+            "👉 *next* → Next verse after last you viewed\n"
+            "👉 *peace*, *sad*, *hope* → Get mood-based healing wisdom"
         )
 
     if user_msg == "random":
@@ -81,16 +90,29 @@ def handle_verse_request(user_msg, user_id=None):
             v += 1
             ch_data = data.get("verses", {}).get(str(ch))
             if ch_data and str(v) in ch_data:
-                user_last_verse[user_id] = (ch, v)
+                user_last_verse[user_id] = (int(ch), int(v))
                 save_user_state()
                 return format_verse(ch, v, ch_data[str(v)])
             else:
                 return "📘 You've reached the last verse of this chapter."
         return "📌 Please start with a verse like *2.47* first."
 
+    # Mood-based wisdom
+    for mood, keywords in MOOD_KEYWORDS.items():
+        if mood in user_msg:
+            matched_verses = []
+            for ch, ch_data in data.get("verses", {}).items():
+                for verse, details in ch_data.items():
+                    if any(kw in details.get("meaning_en", "").lower() for kw in keywords):
+                        matched_verses.append((ch, verse, details))
+            if matched_verses:
+                selected = random.sample(matched_verses, min(3, len(matched_verses)))
+                return "\n".join([format_verse(ch, verse, d) for ch, verse, d in selected])
+            return f"🙏 Sorry, I couldn't find verses for the mood *{mood}*."
+
     matches = re.findall(r'(\d+)\.(\d+(?:,\d+)*)', user_msg)
     if not matches:
-        return "⚠️ Please send verses like: 2.11 or 2.11,12 or 3.16,17,18"
+        return "⚠️ Please send verses like: 2.11 or 2.11,12 or 3.16,17,18 or try typing *sad*, *peace*, *hope*..."
 
     results = []
     for chapter, verse_group in matches:

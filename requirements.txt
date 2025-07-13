@@ -1,9 +1,5 @@
 Flask==2.3.3
 gunicorn==21.2.0
-python-dotenv==1.0.1
-requests==2.31.0
-
-# Compatible AI/NLP stack for Python 3.10
 sentence-transformers==2.2.2
 huggingface_hub==0.19.4
 transformers==4.25.1

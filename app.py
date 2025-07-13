@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import random
 import re
+from sentence_transformers import SentenceTransformer, util
 
 load_dotenv()
 app = Flask(__name__)
@@ -15,11 +16,11 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
-# Load Bhagavad Gita JSON at startup
+# Load Gita data
 with open('bhagavad_gita.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
-# Optional: Persist user state
+# Load or initialize user state
 USER_STATE_FILE = "user_state.json"
 if os.path.exists(USER_STATE_FILE):
     with open(USER_STATE_FILE, "r") as f:
@@ -43,27 +44,47 @@ def format_verse(ch, verse, verse_detail):
 🇮🇳 *Hindi Meaning*: {verse_detail.get('meaning_hi')}
 🧠 *Word Meanings (HI)*: {verse_detail.get('word_meanings_hi')}\n"""
 
+# Load NLP model and prepare embeddings
+print("🔁 Loading sentence-transformer model...")
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+verse_embeddings = []
+verse_map = []
+
+for ch, ch_data in data.get("verses", {}).items():
+    for verse, details in ch_data.items():
+        meaning = details.get("meaning_en", "")
+        if meaning:
+            embedding = model.encode(meaning, convert_to_tensor=True)
+            verse_embeddings.append(embedding)
+            verse_map.append((ch, verse, details))
+
+# Expanded mood keyword dictionary
+MOOD_KEYWORDS = {
+    "sad": ["grief", "sorrow", "sad", "depressed", "lament", "distress", "pain", "suffering"],
+    "peace": ["peace", "calm", "serenity", "tranquility", "stillness", "inner peace"],
+    "anger": ["anger", "wrath", "rage", "temper", "resentment", "frustration"],
+    "fear": ["fear", "doubt", "anxiety", "panic", "insecurity"],
+    "hope": ["hope", "faith", "courage", "bravery", "resilience", "future", "optimism"],
+    "love": ["love", "affection", "compassion", "devotion", "care", "selfless"],
+    "focus": ["focus", "discipline", "concentration", "determination", "dedicated"],
+    "confusion": ["confused", "lost", "dilemma", "uncertain", "indecision", "unclear"],
+    "stress": ["stress", "overwhelmed", "burden", "pressure", "tension"],
+    "forgiveness": ["forgive", "forgiveness", "compassion", "release", "pardon", "letting go"]
+}
+
 def handle_verse_request(user_msg, user_id=None):
     user_msg = user_msg.strip().lower()
-
-    MOOD_KEYWORDS = {
-        "sad": ["grief", "sorrow", "sad", "depressed", "lament", "distress", "pain", "suffering"],
-        "peace": ["peace", "calm", "serenity", "tranquility", "stillness", "inner peace"],
-        "anger": ["anger", "wrath", "rage", "temper", "control", "resentment"],
-        "fear": ["fear", "doubt", "anxiety", "panic", "scared", "insecure"],
-        "hope": ["hope", "faith", "future", "courage", "strength", "uplift"],
-    }
 
     if user_msg in ["hi", "hello", "start", "help"]:
         return (
             "🙏 Welcome to Bhagavad Gita Slok Bot!\n\n"
             "You can send:\n"
             "👉 *2.47* → Chapter 2, Verse 47\n"
-            "👉 *2.11,12* → Chapter 2, Verses 11 & 12\n"
             "👉 *random* → Random verse\n"
             "👉 *daily* → Verse of the day\n"
-            "👉 *next* → Next verse after last you viewed\n"
-            "👉 *peace*, *sad*, *hope* → Get mood-based healing wisdom"
+            "👉 *next* → Next verse from where you left\n"
+            "👉 *peace*, *sad*, *hope*, *focus*, *stress*, etc. → Get mood-based wisdom"
         )
 
     if user_msg == "random":
@@ -90,55 +111,37 @@ def handle_verse_request(user_msg, user_id=None):
             v += 1
             ch_data = data.get("verses", {}).get(str(ch))
             if ch_data and str(v) in ch_data:
-                user_last_verse[user_id] = (int(ch), int(v))
+                user_last_verse[user_id] = (ch, v)
                 save_user_state()
                 return format_verse(ch, v, ch_data[str(v)])
-            else:
-                return "📘 You've reached the last verse of this chapter."
-        return "📌 Please start with a verse like *2.47* first."
+            return "📘 You've reached the last verse of this chapter."
+        return "📌 Start with a verse like *2.47* first."
 
-    # Mood-based wisdom
-    for mood, keywords in MOOD_KEYWORDS.items():
-        if mood in user_msg:
-            matched_verses = []
-            for ch, ch_data in data.get("verses", {}).items():
-                for verse, details in ch_data.items():
-                    if any(kw in details.get("meaning_en", "").lower() for kw in keywords):
-                        matched_verses.append((ch, verse, details))
-            if matched_verses:
-                selected = random.sample(matched_verses, min(3, len(matched_verses)))
-                return "\n".join([format_verse(ch, verse, d) for ch, verse, d in selected])
-            return f"🙏 Sorry, I couldn't find verses for the mood *{mood}*."
+    # 🔍 Mood-based wisdom (keyword and NLP)
+    if user_msg in MOOD_KEYWORDS:
+        keywords = MOOD_KEYWORDS[user_msg]
+        matched = []
+        for ch, ch_data in data.get("verses", {}).items():
+            for verse, d in ch_data.items():
+                if any(kw in d.get("meaning_en", "").lower() for kw in keywords):
+                    matched.append((ch, verse, d))
+        if matched:
+            selected = random.sample(matched, min(3, len(matched)))
+            return "\n".join([format_verse(ch, verse, d) for ch, verse, d in selected])
 
-    matches = re.findall(r'(\d+)\.(\d+(?:,\d+)*)', user_msg)
-    if not matches:
-        return "⚠️ Please send verses like: 2.11 or 2.11,12 or 3.16,17,18 or try typing *sad*, *peace*, *hope*..."
-
-    results = []
-    for chapter, verse_group in matches:
-        ch_data = data.get("verses", {}).get(str(chapter))
-        if not ch_data:
-            results.append(f"❌ Chapter {chapter} not found.")
-            continue
-
-        for verse in verse_group.split(','):
-            verse = verse.strip()
-            verse_detail = ch_data.get(verse)
-            if verse_detail:
-                results.append(format_verse(chapter, verse, verse_detail))
-                if user_id:
-                    user_last_verse[user_id] = (int(chapter), int(verse))
-                    save_user_state()
-            else:
-                results.append(f"⚠️ Verse {verse} not found in chapter {chapter}.")
-
-    return "\n".join(results[:5])
+    # ✨ NLP fallback
+    user_embedding = model.encode(user_msg, convert_to_tensor=True)
+    results = util.semantic_search(user_embedding, verse_embeddings, top_k=3)
+    best = results[0]
+    return "\n".join([
+        format_verse(*verse_map[hit['corpus_id']])
+        for hit in best
+    ])
 
 @app.route('/verse-details', methods=['GET'])
 def get_verse_details():
     chapter = request.args.get('chapter_number')
     verses = request.args.getlist('verse_numbers')
-
     if not chapter or not verses:
         return jsonify({'error': 'chapter_number and verse_numbers are required'}), 400
 

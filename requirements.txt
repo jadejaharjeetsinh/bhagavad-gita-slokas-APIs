@@ -1,4 +1,10 @@
-flask
-requests
 python-dotenv
 gunicorn
+Flask==2.3.3
+python-dotenv==1.0.1
+requests==2.31.0
+sentence-transformers==2.2.2
+torch>=1.9.0
+transformers>=4.6.0
+scipy>=1.4.1
+numpy>=1.18.0
